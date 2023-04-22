@@ -27,12 +27,10 @@ def run_MCTS(iteration):
     net_to_play=f"current_net_trained8_iter{iteration}.pth.tar"
     mp.set_start_method("spawn",force=True)
     net = ChessNet()
-    cuda = torch.cuda.is_available()
-    if cuda:
-        sys.stdout.write("#############################\n")
-        sys.stdout.write("#      MCTS USING CUDA      #\n")
-        sys.stdout.write("#############################\n")
-        net.cuda()
+    sys.stdout.write("#############################\n")
+    sys.stdout.write("#      MCTS USING CUDA      #\n")
+    sys.stdout.write("#############################\n")
+    net.cuda()
     net.share_memory()
     net.eval()
 
@@ -68,12 +66,10 @@ def run_net_training(iteration):
 
     mp.set_start_method("spawn",force=True)
     net = ChessNet()
-    cuda = torch.cuda.is_available()
-    if cuda:
-        print("#############################")
-        print("#    TRAINING USING CUDA    #")
-        print("#############################")
-        net.cuda()
+    print("#############################")
+    print("#    TRAINING USING CUDA    #")
+    print("#############################")
+    net.cuda()
     net.share_memory()
     net.train()
 
