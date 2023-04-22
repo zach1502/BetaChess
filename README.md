@@ -1,6 +1,6 @@
 # BetaChess: MCTS-based Chess Engine with Deep Neural Networks
 
-This project uses Monte Carlo Tree Search (MCTS) and a deep learning model to create a chess AI. The code is organized into two main Python scripts: `beta_chess.py` and `pipeline.py`.
+This project uses Monte Carlo Tree Search (MCTS) and a deep learning model to create a chess AI. The code is organized into three main Python scripts: `beta_chess.py`, `MCTS.py` and `pipeline.py`.
 
 ## Requirements
 
