@@ -1,0 +1,5 @@
+chess==1.9.4
+matplotlib==3.5.1
+numpy==1.18.5
+python_chess==0.31.4
+torch==2.0.0+cu118
