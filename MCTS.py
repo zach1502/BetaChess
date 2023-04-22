@@ -16,6 +16,9 @@ MOVE_REPRESENTATION_SIZE = 4672 # 8 * 8 * 73
 LEGAL_MOVES_CACHE = {}
 MOVES_PAST_30_CACHE = {} # keeps memory usage down
 
+# you sacrifice move exploration for speed the more you reuse subtrees.
+PROBABILITY_OF_SUBTREE_REUSE = 0.00 # 0 for no reuse, 1 for always reuse
+
 WHITE_WINS = 0
 BLACK_WINS = 0
 DRAWS = 0
@@ -186,7 +189,7 @@ def UCT_search(game_state, num_reads, net, root=None):
     return best_move, root
 
 def update_root_node(root, best_move):
-    if (best_move in root.children) and (np.random.random_sample() < -1):
+    if (best_move in root.children) and (np.random.random_sample() < PROBABILITY_OF_SUBTREE_REUSE):
         new_root = root.children[best_move]
         new_root.parent = DummyNode()
         return new_root
