@@ -12,8 +12,17 @@ matplotlib.use("Agg")
 
 NUM_RESIDUAL_BLOCKS = 19
 BATCH_SIZE = 16
-PATIENCE = 20
+PATIENCE = 64
 PRINT_INTERVAL = 16
+
+def get_best_available_device():    
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    return device
+
+DEVICE = get_best_available_device()
 
 class BoardData(Dataset):
     def __init__(self, dataset):  # dataset = np.array of (s, p, v)
@@ -110,10 +119,11 @@ class ChessLoss(nn.Module):
 
 def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
     torch.manual_seed(cpu)
+    net.to(DEVICE)
     net.train()
     criterion = ChessLoss()
-    criterion.cuda()
-    optimizer = optim.AdamW(net.parameters(), lr=0.001)
+    criterion.to(DEVICE)
+    optimizer = optim.AdamW(net.parameters(), lr=0.003)
     scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
     scaler = GradScaler()
 
@@ -136,20 +146,20 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
         total_train_loss = 0.0
         for i, data in enumerate(train_loader, 0):
             state, policy, value = data
-            state, policy, value = state.cuda().float(), policy.float().cuda(), value.cuda().float()
+            state, policy, value = state.to(DEVICE).float(), policy.to(DEVICE).float(), value.to(DEVICE).float()
 
-            with torch.cuda.amp.autocast():
+            with torch.cuda.amp.autocast(enabled=torch.cuda.is_available()):
                 policy_pred, value_pred = net(state)
                 loss = criterion(value_pred[:, 0], value, policy_pred, policy)
 
             scaler.scale(loss).backward()
-            total_train_loss += scaler.scale(loss).item()
+            total_train_loss += loss.item()
             scaler.step(optimizer)
             scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
             if (i + 1) % PRINT_INTERVAL == 0:
-                print(f"Process ID: {os.getpid()} [Epoch: {epoch + 1}, {(i + 1) * BATCH_SIZE}/{len(train_set)} points] average loss per batch: {total_train_loss / (i + 1):.3f}")
+                print(f"Process ID: {os.getpid()} [Epoch: {epoch + 1}, {(i + 1) * BATCH_SIZE}/{len(train_set)} points] average loss per sample: {total_train_loss / ((i + 1) * BATCH_SIZE):.6f}")
                 print(f"Policy: {policy[0].argmax().item()}, {policy_pred[0].argmax().item()}")
                 print(f"Value: {value[0].item()}, {value_pred[0, 0].item()}")
 
@@ -159,14 +169,14 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
         with torch.no_grad():
             for i, data in enumerate(val_loader, 0):
                 state, policy, value = data
-                state, policy, value = state.cuda().float(), policy.float().cuda(), value.cuda().float()
+                state, policy, value = state.to(DEVICE).float(), policy.to(DEVICE).float(), value.to(DEVICE).float()
 
                 policy_pred, value_pred = net(state)
                 loss = criterion(value_pred[:, 0], value, policy_pred, policy)
                 total_val_loss += loss.item()
 
                 if (i + 1) % PRINT_INTERVAL == 0:
-                    print(f"Process ID: {os.getpid()} [Epoch: {epoch + 1}, {(i + 1) * BATCH_SIZE}/{len(val_set)} points] average loss per batch: {total_val_loss / (i + 1):.3f}")
+                    print(f"Process ID: {os.getpid()} [Epoch: {epoch + 1}, {(i + 1) * BATCH_SIZE}/{len(val_set)} points] average loss per sample: {total_val_loss / ((i + 1) * BATCH_SIZE):.6f}")
                     print(f"Policy: {policy[0].argmax().item()}, {policy_pred[0].argmax().item()}")
                     print(f"Value: {value[0].item()}, {value_pred[0, 0].item()}")
 

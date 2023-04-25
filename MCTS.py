@@ -13,15 +13,24 @@ import encoding
 # DO NOT CHANGE
 MOVE_REPRESENTATION_SIZE = 4672 # 8 * 8 * 73
 
-LEGAL_MOVES_CACHE = {}
-MOVES_PAST_30_CACHE = {} # keeps memory usage down
-
 # you sacrifice move exploration for speed the more you reuse subtrees.
 PROBABILITY_OF_SUBTREE_REUSE = 0.00 # 0 for no reuse, 1 for always reuse
+
+# Early on, it is best for this to be off, because the neural network is not very good.
+PARENT_Q_INIT_ENABLED = False
 
 WHITE_WINS = 0
 BLACK_WINS = 0
 DRAWS = 0
+
+def get_best_available_device():    
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    return device
+
+DEVICE = get_best_available_device()
 
 class UCTNode():
     def __init__(self, game, move, parent=None, c_puct=1.0):
@@ -74,8 +83,7 @@ class UCTNode():
         else:
             legal_moves_mask = np.zeros([MOVE_REPRESENTATION_SIZE], dtype=bool)
 
-            game_fen = self.game.fen()
-            legal_moves = self.get_legal_moves(game_fen)
+            legal_moves = list(self.game.legal_moves)
             for move in legal_moves:
                 legal_moves_mask[encoding.encode_action(move, self.game)] = True
 
@@ -90,20 +98,6 @@ class UCTNode():
               copy_board, move, parent=self, c_puct=1.0)
         return self.children[move]
 
-    def get_legal_moves(self, game_fen):
-        if game_fen in MOVES_PAST_30_CACHE:
-            return MOVES_PAST_30_CACHE[game_fen]
-
-        if game_fen in LEGAL_MOVES_CACHE:
-            return LEGAL_MOVES_CACHE[game_fen]
-
-        if len(self.game.move_stack) > 30:
-            MOVES_PAST_30_CACHE[game_fen] = list(self.game.legal_moves)
-            return MOVES_PAST_30_CACHE[game_fen]
-
-        LEGAL_MOVES_CACHE[game_fen] = list(self.game.legal_moves)
-        return LEGAL_MOVES_CACHE[game_fen]
-
     def add_dirichlet_noise(self,action_idxs,child_priors):
         valid_child_priors = child_priors[action_idxs]
         valid_child_priors = 0.75 * valid_child_priors + 0.25 * np.random.dirichlet(np.zeros([len(valid_child_priors)], dtype=np.float32)+0.3)
@@ -115,10 +109,7 @@ class UCTNode():
         action_idxs = []
         c_p = child_priors
 
-        # check in cache
-        game_fen = self.game.fen()
-        legal_moves = self.get_legal_moves(game_fen)
-
+        legal_moves = list(self.game.legal_moves)
         for move in legal_moves: # get all legal moves for current board state s
             action_idxs.append(encoding.encode_action(move, self.game))
 
@@ -130,7 +121,7 @@ class UCTNode():
         self.child_priors = c_p
 
         # Parent-Q initialization
-        if not isinstance(self.parent, DummyNode):
+        if PARENT_Q_INIT_ENABLED and not isinstance(self.parent, DummyNode):
             parent_q_value = self.parent.child_Q()[self.move]
             for idx in action_idxs:
                 self.child_total_value[idx] = parent_q_value
@@ -164,7 +155,7 @@ def UCT_search(game_state, num_reads, net, root=None):
         leaf = root.select_leaf()
         encoded_s = encoding.encode_board(leaf.game)
         encoded_s = encoded_s.transpose(2,0,1)
-        encoded_s = torch.from_numpy(encoded_s).float().cuda()
+        encoded_s = torch.from_numpy(encoded_s).float().to(DEVICE)
 
         child_priors, value_estimate = net(encoded_s)
 
@@ -176,12 +167,9 @@ def UCT_search(game_state, num_reads, net, root=None):
         leaf.expand(child_priors) # need to make sure valid moves
         leaf.backup(value_estimate)
 
-    state_fen = game_state.fen()
-    if state_fen not in LEGAL_MOVES_CACHE:
-        LEGAL_MOVES_CACHE[state_fen] = list(game_state.legal_moves)
-
+    legal_moves = list(game_state.legal_moves)
     legal_moves = [
-        encoding.encode_action(move, game_state) for move in LEGAL_MOVES_CACHE[state_fen]
+        encoding.encode_action(move, game_state) for move in legal_moves
     ]
     legal_child_visits = root.child_number_visits[legal_moves]
     best_move_idx = np.argmax(legal_child_visits)
@@ -244,9 +232,7 @@ def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_lim
             root = update_root_node(root, best_move)
 
             dataset.append([board_state, policy])
-            print(f"White Wins: {WHITE_WINS}")
-            print(f"Draws: {DRAWS}")
-            print(f"Black Wins: {BLACK_WINS}")
+            print(f"White Wins: {WHITE_WINS} | Draws: {DRAWS} | Black Wins: {BLACK_WINS}")
             print(f"Game: {idxx} CPU: {cpu}")
             print(f"Move Number: {current_board.fullmove_number}")
             print(f"Best move: {encoding.decode_action(best_move, current_board)}")
@@ -260,10 +246,6 @@ def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_lim
                     WHITE_WINS += 1
                     value = 1
                 checkmate = True
-            
-            # Reset unlikely moves cache, keeps memory use reasonable (Otherwise 128 games could max out 32gb!)
-            MOVES_PAST_30_CACHE.clear()
-
 
         if value == 0:
             DRAWS += 1
@@ -276,4 +258,4 @@ def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_lim
             else:
                 dataset_p.append([s, p, value])
         del dataset
-        save_as_pickle("dataset_cpu%i_%i_%s" % (cpu,idxx, datetime.datetime.today().strftime("%Y-%m-%d")), dataset_p, iteration)
+        save_as_pickle("dataset_cpu%i_%i_%s" % (cpu,idxx, datetime.datetime.today().strftime("%Y-%m-%d-%H:%M:%S")), dataset_p, iteration)

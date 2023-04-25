@@ -9,18 +9,29 @@ import torch.multiprocessing as mp
 from beta_chess import ChessNet, train, create_beta_net
 from MCTS import MCTS_self_play
 
+
 # recommend powers of 2
 # 6 processes, 30 games each = recc 32 GB RAM
 
 # Training parameters
-NUM_PROCESSES = 2
-NUM_GAMES_TO_SELF_PLAY = 256
+NUM_PROCESSES_MCTS = 1
+NUM_PROCESSES_TRAIN = 2
+NUM_GAMES_TO_SELF_PLAY = 128
 NUM_ITERATIONS = 20
-NUM_EPOCHS = 1024
+NUM_EPOCHS = 2048
 
 # MCTS parameters
 NUM_READS = 512 # ideally should be a lot higher, but takes too long
-GAME_MOVE_LIMIT = 100
+GAME_MOVE_LIMIT = 120
+
+def get_best_available_device():    
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    return device
+
+DEVICE = get_best_available_device()
 
 def run_MCTS(iteration):
     # Runs MCTS
@@ -30,19 +41,20 @@ def run_MCTS(iteration):
     sys.stdout.write("#############################\n")
     sys.stdout.write("#      MCTS USING CUDA      #\n")
     sys.stdout.write("#############################\n")
-    net.cuda()
+
+    net.to(DEVICE)
     net.share_memory()
     net.eval()
 
     current_net_filename = os.path.join("./model_data/",\
                                     net_to_play)
-    checkpoint = torch.load(current_net_filename)
+    checkpoint = checkpoint = torch.load(current_net_filename, map_location=DEVICE)
 
     net.load_state_dict(checkpoint['model_state_dict'])
 
 
     processes1 = []
-    for i in range(NUM_PROCESSES):
+    for i in range(NUM_PROCESSES_MCTS):
         p1 = mp.Process(target=MCTS_self_play, args=(net, NUM_GAMES_TO_SELF_PLAY, i, iteration, NUM_READS, GAME_MOVE_LIMIT))
         p1.start()
         processes1.append(p1)
@@ -79,7 +91,7 @@ def run_net_training(iteration):
     net.load_state_dict(checkpoint['model_state_dict'])
 
     processes2 = []
-    for i in range(NUM_PROCESSES):
+    for i in range(NUM_PROCESSES_TRAIN):
         p2 = mp.Process(target=train,args=(net, datasets, 0, NUM_EPOCHS, i, iteration))
         p2.start()
         processes2.append(p2)
@@ -100,6 +112,6 @@ if __name__=="__main__":
         create_beta_net()
 
 
-    for i in range(2, NUM_ITERATIONS+1):
+    for i in range(1, NUM_ITERATIONS+1):
         run_MCTS(i)
         run_net_training(i)

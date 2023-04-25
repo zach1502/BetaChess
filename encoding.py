@@ -2,20 +2,17 @@ import numpy as np
 import chess
 
 def encode_board(board):
-    encoded = np.zeros([8, 8, 20]).astype(int)
+    encoded = np.zeros([8, 8, 20], dtype=int)
     encoder_dict = {
         "R": 0, "N": 1, "B": 2, "Q": 3, "K": 4, "P": 5,
         "r": 6, "n": 7, "b": 8, "q": 9, "k": 10, "p": 11
     }
 
-    for square in chess.SQUARES:
-        piece = board.piece_at(square)
-        if piece is not None:
-            i, j = chess.square_rank(square), chess.square_file(square)
-            encoded[i, j, encoder_dict[piece.symbol()]] = 1
+    for square, piece in board.piece_map().items():
+        i, j = chess.square_rank(square), chess.square_file(square)
+        encoded[i, j, encoder_dict[piece.symbol()]] = 1
 
-    if board.turn == chess.WHITE:
-        encoded[:, :, 12] = 1
+    encoded[:, :, 12] = board.turn == chess.WHITE
 
     encoded[:, :, 13] = board.has_queenside_castling_rights(chess.WHITE)
     encoded[:, :, 14] = board.has_kingside_castling_rights(chess.WHITE)
@@ -36,11 +33,10 @@ def decode_board(encoded):
 
     board = chess.Board.empty()
 
-    for i in range(8):
-        for j in range(8):
-            for k, piece_symbol in decoder_dict.items():
-                if encoded[i, j, k] == 1:
-                    board.set_piece_at(chess.square(j, i), chess.Piece.from_symbol(piece_symbol))
+    piece_positions = np.argwhere(encoded[:, :, :12] == 1)
+    for i, j, k in piece_positions:
+        board.set_piece_at(chess.square(j, i), chess.Piece.from_symbol(decoder_dict[k]))
+
 
     board.turn = chess.WHITE if encoded[0, 0, 12] == 1 else chess.BLACK
 
@@ -102,7 +98,7 @@ def encode_action(move, board):
 
     encoded[from_row, from_col, idx] = 1
     encoded = encoded.reshape(-1)
-    encoded = np.where(encoded == 1)[0][0]
+    encoded = np.argmax(encoded)
 
     return encoded
 
@@ -160,7 +156,7 @@ def decode_action(encoded, board):
 
     
     to_row = from_row + dx
-    if piece == chess.PAWN and to_row in [0, 7] and promotion is None:
+    if piece == chess.PAWN and promotion is None and to_row in [0, 7]:
         promotion = chess.QUEEN
 
     to_square = calculate_to_square(dx, dy)
