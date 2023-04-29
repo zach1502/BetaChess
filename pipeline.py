@@ -16,7 +16,7 @@ from MCTS import MCTS_self_play
 # Training parameters
 NUM_PROCESSES_MCTS = 8
 NUM_PROCESSES_TRAIN = 2
-NUM_GAMES_TO_SELF_PLAY = 96
+NUM_GAMES_TO_SELF_PLAY = 128
 NUM_ITERATIONS = 40
 NUM_EPOCHS = 2048
 
@@ -112,6 +112,6 @@ if __name__=="__main__":
         create_beta_net()
 
 
-    for i in range(1, NUM_ITERATIONS+1):
-        # run_MCTS(i)
+    for i in range(0, NUM_ITERATIONS+1):
+        run_MCTS(i)
         run_net_training(i)
