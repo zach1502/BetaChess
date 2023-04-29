@@ -19,10 +19,6 @@ PROBABILITY_OF_SUBTREE_REUSE = 0.00 # 0 for no reuse, 1 for always reuse
 # Early on, it is best for this to be off, because the neural network is not very good.
 PARENT_Q_INIT_ENABLED = False
 
-WHITE_WINS = 0
-BLACK_WINS = 0
-DRAWS = 0
-
 def get_best_available_device():    
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -207,22 +203,18 @@ def save_as_pickle(filename, data, iteration):
         pickle.dump(data, output)
 
 def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_limit):
-    global BLACK_WINS
-    global WHITE_WINS
-    global DRAWS
+    WHITE_WINS = 0
+    BLACK_WINS = 0
+    DRAWS = 0
 
     for idxx in range(0, num_games):
         current_board = chess.Board()
-        checkmate = False
         dataset = [] # to get state, policy, value for neural network training
         states = []
         value = 0
         root = None
-        while checkmate is False and current_board.fullmove_number <= game_move_limit:
 
-            if current_board.can_claim_threefold_repetition():
-                break
-
+        while not current_board.is_game_over() and current_board.fullmove_number <= game_move_limit:
             states.append(current_board.fen())
             board_state = copy.deepcopy(encoding.encode_board(current_board))
             best_move, root = UCT_search(current_board, num_reads, chessnet, root)
@@ -238,17 +230,22 @@ def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_lim
             print(f"Best move: {encoding.decode_action(best_move, current_board)}")
             print(current_board)
             print()
-            if current_board.is_checkmate():
-                if current_board.turn == chess.WHITE:
-                    BLACK_WINS += 1
-                    value = -1
-                elif current_board.turn == chess.BLACK:
-                    WHITE_WINS += 1
-                    value = 1
-                checkmate = True
 
-        if value == 0:
+        game_outcome = current_board.outcome()
+
+        if game_outcome is not None:
+            if game_outcome.winner == chess.WHITE:
+                WHITE_WINS += 1
+                value = 1
+            elif game_outcome.winner == chess.BLACK:
+                BLACK_WINS += 1
+                value = -1
+            else:
+                DRAWS += 1
+                value = 0
+        else:
             DRAWS += 1
+            value = 0
 
         dataset_p = []
         for idx, data in enumerate(dataset):

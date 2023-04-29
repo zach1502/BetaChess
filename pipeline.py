@@ -112,6 +112,6 @@ if __name__=="__main__":
         create_beta_net()
 
 
-    for i in range(0, NUM_ITERATIONS+1):
-        run_MCTS(i)
+    for i in range(1, NUM_ITERATIONS+1):
+        # run_MCTS(i)
         run_net_training(i)
