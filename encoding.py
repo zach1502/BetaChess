@@ -1,6 +1,9 @@
 import numpy as np
 import chess
 
+KNIGHT_MOVEMENT_DXDY_TO_IDX = {(2, -1): 0, (2, 1): 1, (1, -2): 2, (-1, -2): 3, (-2, 1): 4, (-2, -1): 5, (-1, 2): 6, (1, 2): 7}
+KNIGHT_MOVEMENT_IDX_TO_DXDY = [(2, -1), (2, 1), (1, -2), (-1, -2), (-2, 1), (-2, -1), (-1, 2), (1, 2)]
+
 def encode_board(board):
     encoded = np.zeros([8, 8, 20], dtype=int)
     encoder_dict = {
@@ -85,8 +88,7 @@ def encode_action(move, board):
         elif dx == -dy:
             idx = 49 + dx if dx < 0 else 48 + dx
     elif piece == chess.KNIGHT:
-        idx = 56 + {(2, -1): 0, (2, 1): 1, (1, -2): 2, (-1, -2): 3, (-2, 1): 4, (-2, -1): 5, (-1, 2): 6, (1, 2): 7}[
-            (dx, dy)]
+        idx = 56 + KNIGHT_MOVEMENT_DXDY_TO_IDX[(dx, dy)]
     elif piece == chess.PAWN and to_row in [0, 7] and promotion is not None:
         underpromotion_dict = {chess.ROOK: 0, chess.KNIGHT: 1, chess.BISHOP: 2}
         if abs(dx) == 1 and dy == 0:
@@ -110,13 +112,13 @@ def decode_action(encoded, board):
     from_row, from_col, idx = np.where(encoded_array == 1)
     from_row, from_col, idx = from_row[0], from_col[0], idx[0]
 
-    from_square = from_row * 8 + from_col
+    from_square = (from_row << 3) + from_col
     promotion = None
 
     def calculate_to_square(dx, dy):
         to_row = from_row + dx
         to_col = from_col + dy
-        return to_row * 8 + to_col
+        return (to_row << 3) + to_col
 
     piece = board.piece_type_at(from_square)
 
@@ -143,7 +145,7 @@ def decode_action(encoded, board):
         dx = idx - 48
         dy = -dx
     elif idx < 64:
-        dx, dy = [(2, -1), (2, 1), (1, -2), (-1, -2), (-2, 1), (-2, -1), (-1, 2), (1, 2)][idx - 56]
+        dx, dy = KNIGHT_MOVEMENT_IDX_TO_DXDY[idx - 56]
     else:
         if (board.turn == chess.WHITE):
             dx = 1

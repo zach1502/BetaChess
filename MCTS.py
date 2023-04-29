@@ -258,4 +258,4 @@ def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_lim
             else:
                 dataset_p.append([s, p, value])
         del dataset
-        save_as_pickle("dataset_cpu%i_%i_%s" % (cpu,idxx, datetime.datetime.today().strftime("%Y-%m-%d-%H:%M:%S")), dataset_p, iteration)
+        save_as_pickle("dataset_cpu%i_%i_%s" % (cpu,idxx, datetime.datetime.today().strftime("%Y-%m-%d-%H-%M-%S")), dataset_p, iteration)

@@ -124,7 +124,7 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
     criterion = ChessLoss()
     criterion.to(DEVICE)
     optimizer = optim.AdamW(net.parameters(), lr=0.003)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400], gamma=0.2)
+    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000], gamma=0.2)
     scaler = GradScaler()
 
     split_idx = int(len(dataset) * 0.8)
@@ -140,6 +140,7 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
     train_losses = []
     val_losses = []
 
+    print(f"Process ID: {os.getpid()} Training...")
     for epoch in range(epoch_start, epoch_stop):
         # Training loop
         net.train()
