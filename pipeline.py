@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import sys
+import json
 import os
 import pickle
 import numpy as np
@@ -9,20 +10,22 @@ import torch.multiprocessing as mp
 from beta_chess import ChessNet, train, create_beta_net
 from MCTS import MCTS_self_play
 
+NUM_PROCESSES_MCTS = 4
+NUM_ITERATIONS = 400
 
-# recommend powers of 2
-# 6 processes, 30 games each = recc 32 GB RAM
+def load_settings():
+    global NUM_PROCESSES_MCTS, NUM_ITERATIONS
 
-# Training parameters
-NUM_PROCESSES_MCTS = 8
-NUM_PROCESSES_TRAIN = 2
-NUM_GAMES_TO_SELF_PLAY = 128
-NUM_ITERATIONS = 40
-NUM_EPOCHS = 2048
+    with open("settings.json") as f:
+        settings = json.load(f)
 
-# MCTS parameters
-NUM_READS = 512 # ideally should be a lot higher, but takes too long
-GAME_MOVE_LIMIT = 120
+    NUM_PROCESSES_MCTS = settings["general"]["num_processes"]
+    NUM_ITERATIONS = settings["general"]["num_iterations"]
+
+    print("Loaded settings:")
+    print(f"NUM_PROCESSES_MCTS: {NUM_PROCESSES_MCTS}")
+    print(f"NUM_ITERATIONS: {NUM_ITERATIONS}")
+    
 
 def get_best_available_device():    
     if torch.cuda.is_available():
@@ -55,7 +58,7 @@ def run_MCTS(iteration):
 
     processes1 = []
     for i in range(NUM_PROCESSES_MCTS):
-        p1 = mp.Process(target=MCTS_self_play, args=(net, NUM_GAMES_TO_SELF_PLAY, i, iteration, NUM_READS, GAME_MOVE_LIMIT))
+        p1 = mp.Process(target=MCTS_self_play, args=(net, i, iteration))
         p1.start()
         processes1.append(p1)
     for p1 in processes1:
@@ -90,13 +93,8 @@ def run_net_training(iteration):
     checkpoint = torch.load(current_net_filename)
     net.load_state_dict(checkpoint['model_state_dict'])
 
-    processes2 = []
-    for i in range(NUM_PROCESSES_TRAIN):
-        p2 = mp.Process(target=train,args=(net, datasets, 0, NUM_EPOCHS, i, iteration))
-        p2.start()
-        processes2.append(p2)
-    for p2 in processes2:
-        p2.join()
+    train(net, datasets, iteration)
+
     # save results
     torch.save({'model_state_dict': net.state_dict()}, os.path.join("./model_data/",\
                                     save_as))
@@ -111,7 +109,8 @@ if __name__=="__main__":
         os.mkdir("./model_data/")
         create_beta_net()
 
+    load_settings()
 
-    for i in range(1, NUM_ITERATIONS+1):
-        # run_MCTS(i)
+    for i in range(0, NUM_ITERATIONS+1):
+        run_MCTS(i)
         run_net_training(i)

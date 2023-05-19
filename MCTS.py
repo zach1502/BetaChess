@@ -5,19 +5,39 @@ import collections
 import copy
 import datetime
 import numpy as np
-
+import json
 import chess
 import torch
 import encoding
 
 # DO NOT CHANGE
 MOVE_REPRESENTATION_SIZE = 4672 # 8 * 8 * 73
-
 # you sacrifice move exploration for speed the more you reuse subtrees.
 PROBABILITY_OF_SUBTREE_REUSE = 0.00 # 0 for no reuse, 1 for always reuse
-
 # Early on, it is best for this to be off, because the neural network is not very good.
 PARENT_Q_INIT_ENABLED = False
+NUM_GAMES = 64
+NUM_READS = 256
+GAME_MOVE_LIMIT = 120
+
+def load_settings():
+    global NUM_GAMES, NUM_READS, GAME_MOVE_LIMIT, PARENT_Q_INIT_ENABLED, PROBABILITY_OF_SUBTREE_REUSE
+
+    with open('settings.json') as f:
+        data = json.load(f)
+    
+    NUM_GAMES = data['mcts']['num_games']
+    NUM_READS = data['mcts']['num_reads']
+    GAME_MOVE_LIMIT = data['mcts']['game_move_limit']
+    PARENT_Q_INIT_ENABLED = data['mcts']['parent_q_init_enabled']
+    PROBABILITY_OF_SUBTREE_REUSE = data['mcts']['probability_of_subtree_reuse']
+
+    print('Loaded settings from settings.json')
+    print(f'NUM_GAMES: {NUM_GAMES}')
+    print(f'NUM_READS: {NUM_READS}')
+    print(f'GAME_MOVE_LIMIT: {GAME_MOVE_LIMIT}')
+    print(f'PARENT_Q_INIT_ENABLED: {PARENT_Q_INIT_ENABLED}')
+    print(f'PROBABILITY_OF_SUBTREE_REUSE: {PROBABILITY_OF_SUBTREE_REUSE}')
 
 def get_best_available_device():    
     if torch.cuda.is_available():
@@ -131,9 +151,11 @@ class UCTNode():
         current = self
         while current.parent is not None:
             if current.game.turn == chess.BLACK:
-                current.total_value += (1*value_estimate)+1
+                # same as current.parent.game.player = chess.WHITE
+                # if curr game is black, then parent game is white
+                current.total_value += (1*value_estimate)
             elif current.game.turn == chess.WHITE:
-                current.total_value += (-1*value_estimate)-1
+                current.total_value += (-1*value_estimate)
 
             current = current.parent
 
@@ -202,22 +224,25 @@ def save_as_pickle(filename, data, iteration):
     with open(completeName, 'wb') as output:
         pickle.dump(data, output)
 
-def MCTS_self_play(chessnet, num_games, cpu, iteration, num_reads, game_move_limit):
+def MCTS_self_play(chessnet, cpu, iteration):
+
+    load_settings()
+
     WHITE_WINS = 0
     BLACK_WINS = 0
     DRAWS = 0
 
-    for idxx in range(0, num_games):
+    for idxx in range(0, NUM_GAMES):
         current_board = chess.Board()
         dataset = [] # to get state, policy, value for neural network training
         states = []
         value = 0
         root = None
 
-        while not current_board.is_game_over() and current_board.fullmove_number <= game_move_limit:
+        while not current_board.is_game_over() and current_board.fullmove_number <= GAME_MOVE_LIMIT:
             states.append(current_board.fen())
             board_state = copy.deepcopy(encoding.encode_board(current_board))
-            best_move, root = UCT_search(current_board, num_reads, chessnet, root)
+            best_move, root = UCT_search(current_board, NUM_READS, chessnet, root)
             current_board = decode_and_move(current_board, best_move) # decode move and move piece(s)
             policy = get_policy(root)
 

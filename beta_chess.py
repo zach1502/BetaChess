@@ -1,19 +1,46 @@
 #!/usr/bin/env python
 import os
+import json
 import matplotlib
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import random
+import pickle
+import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.cuda.amp import GradScaler
 matplotlib.use("Agg")
 
-NUM_RESIDUAL_BLOCKS = 19
-BATCH_SIZE = 16
-PATIENCE = 64
-PRINT_INTERVAL = 16
+NUM_RESIDUAL_BLOCKS = 4
+BATCH_SIZE = 32
+PATIENCE = 128
+PRINT_INTERVAL = 32
+LEARNING_RATE = 0.03
+NUM_EPOCHS = 2048
+
+def load_settings():
+    global NUM_RESIDUAL_BLOCKS, BATCH_SIZE, PATIENCE, PRINT_INTERVAL, LEARNING_RATE, NUM_EPOCHS
+
+    with open('settings.json') as f:
+        data = json.load(f)
+
+    NUM_RESIDUAL_BLOCKS = data['training']['num_residual_blocks']
+    BATCH_SIZE = data['training']['batch_size']
+    PATIENCE = data['training']['patience']
+    PRINT_INTERVAL = data['training']['print_interval']
+    LEARNING_RATE = data['training']['learning_rate']
+    NUM_EPOCHS = data['training']['num_epochs']
+
+    print("Loaded settings from settings.json")
+    print("NUM_RESIDUAL_BLOCKS:", NUM_RESIDUAL_BLOCKS)
+    print("BATCH_SIZE:", BATCH_SIZE)
+    print("PATIENCE:", PATIENCE)
+    print("PRINT_INTERVAL:", PRINT_INTERVAL)
+    print("LEARNING_RATE:", LEARNING_RATE)
+    print("NUM_EPOCHS:", NUM_EPOCHS)
 
 def get_best_available_device():    
     if torch.cuda.is_available():
@@ -96,14 +123,13 @@ class ChessNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = ConvBlock()
-        for block in range(NUM_RESIDUAL_BLOCKS):
-            setattr(self, f"res_{block}", ResBlock())
+        self.res_blocks = nn.ModuleList([ResBlock() for _ in range(NUM_RESIDUAL_BLOCKS)])
         self.outblock = OutBlock()
 
     def forward(self, s):
         s = self.conv(s)
-        for block in range(NUM_RESIDUAL_BLOCKS):
-            s = getattr(self, f"res_{block}")(s)
+        for block in self.res_blocks:
+            s = block(s)
         s = self.outblock(s)
         return s
 
@@ -117,15 +143,42 @@ class ChessLoss(nn.Module):
         total_error = (value_error.view(-1).float() + policy_error).mean()
         return total_error
 
-def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
-    torch.manual_seed(cpu)
+def load_some_previous_games(iteration):
+    loaded_games = []
+    total_loaded_files = 0
+    for prev_iter in range(iteration, -1, -1):
+        prev_iter_folder = f"datasets/iter{prev_iter}"
+        all_files = [os.path.join(prev_iter_folder, file) for file in os.listdir(prev_iter_folder)]
+        
+        num_files_to_load = int(len(all_files) - len(all_files) * (iteration-prev_iter) * 0.25)
+        total_loaded_files += num_files_to_load
+        print(f"loading {num_files_to_load} files from iter{prev_iter}")
+
+        if num_files_to_load < 1:
+            break
+        files_to_load = random.sample(all_files, num_files_to_load)
+
+        for file in files_to_load:
+            pickle_in = open(file, "rb")
+            loaded_games.append(pickle.load(pickle_in))
+
+    print(f"loaded {total_loaded_files} files")
+
+    return np.concatenate(loaded_games, axis=0)
+
+def train(net, dataset, iteration=0):
+    load_settings()
+
     net.to(DEVICE)
     net.train()
     criterion = ChessLoss()
     criterion.to(DEVICE)
-    optimizer = optim.AdamW(net.parameters(), lr=0.003)
-    scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000], gamma=0.2)
+    optimizer = optim.AdamW(net.parameters(), lr=LEARNING_RATE)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1, verbose=True)
     scaler = GradScaler()
+
+    previous_games = load_some_previous_games(iteration)
+    dataset = np.concatenate([dataset, previous_games], axis=0)
 
     split_idx = int(len(dataset) * 0.8)
     train_set = BoardData(dataset[:split_idx])
@@ -141,7 +194,7 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
     val_losses = []
 
     print(f"Process ID: {os.getpid()} Training...")
-    for epoch in range(epoch_start, epoch_stop):
+    for epoch in range(NUM_EPOCHS):
         # Training loop
         net.train()
         total_train_loss = 0.0
@@ -190,10 +243,13 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             counter = 0
+            print("Early stopping counter reset")
             torch.save(net.state_dict(), f"model_data/current_net_trained8_iter{iteration+1}.pth.tar")
         else:
             counter += 1
-            print(f'EarlyStopping counter: {counter} out of {PATIENCE}')
+            print(f'Early Stopping counter: {counter} out of {PATIENCE}')
+            print(f"Best val loss: {best_val_loss}")
+            print(f"Avg val loss: {avg_val_loss}")
             if counter >= PATIENCE:
                 print("Early stopping")
                 break
@@ -217,13 +273,18 @@ def train(net, dataset, epoch_start=0, epoch_stop=20, cpu=0, iteration=0):
     ax2.legend()
 
     # save plot
-    plt.savefig(f"loss_vs_epoch_cpu{cpu}_iter{iteration}.png")
+    plt.savefig(f"loss_vs_epoch_iter{iteration}.png")
 
 
 def create_beta_net():
+    load_settings()
     net = ChessNet()
 
+    # get current file path
+    current_path = os.path.dirname(os.path.realpath(__file__))
+
     # save model
-    torch.save({
-            'model_state_dict': net.state_dict(),
-            }, "current_net_trained8_iter0.pth.tar")
+    torch.save(
+        {'model_state_dict': net.state_dict(),}, 
+        os.path.join(current_path, "model_data", "current_net_trained8_iter0.pth.tar")
+    )
