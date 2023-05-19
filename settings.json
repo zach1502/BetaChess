@@ -1,0 +1,21 @@
+{
+  "general": {
+    "num_processes": 6,
+    "num_iterations": 20
+  },
+  "mcts": {
+    "num_games": 32,
+    "num_reads": 512,
+    "game_move_limit": 90,
+    "probability_of_subtree_reuse": 0.00,
+    "parent_q_init_enabled": false
+  },
+  "training": {
+    "num_epochs": 2048,
+    "learning_rate": 0.008,
+    "batch_size": 32,
+    "patience": 92,
+    "print_interval": 32,
+    "num_residual_blocks": 4
+  }
+}
